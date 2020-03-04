@@ -4,6 +4,9 @@ from mintapi import Mint
 import requests
 import pandas as pd
 from io import StringIO
+import json
+import hashlib
+
 
 DATA_DIR = os.getenv('MINT_DATA_DIRECTORY')
 IMPORT_DIR = os.path.join(DATA_DIR, 'imported')
@@ -15,6 +18,8 @@ MINT_PWD = os.getenv('MINT_PWD')
 MINT_MFA_IMAP_ACCOUNT = os.getenv('MINT_MFA_IMAP_ACCOUNT')
 MINT_MFA_IMAP_PWD = os.getenv('MINT_MFA_IMAP_PWD')
 MINT_MFA_IMAP_SERVER = os.getenv('MINT_MFA_IMAP_SERVER')
+MINT_ROOT_URL = 'https://mint.intuit.com'
+
 
 def load_mint():
     mint = Mint(
@@ -29,25 +34,57 @@ def load_mint():
         imap_server=MINT_MFA_IMAP_SERVER,
         imap_folder="INBOX",
         wait_for_sync=True,
-        wait_for_sync_timeout=300
+        wait_for_sync_timeout=600
     )
     return mint
 
+
+def get_budget(mint):
+    ls = []
+    budgets = mint.get_budgets()
+    for cat in budgets.keys():
+        ls.append(pd.DataFrame(budgets[cat]))
+
+    df = pd.concat(ls)
+    df.insert(0, 'year', (dt.date.today()-dt.timedelta(1)).year)
+    df.insert(1, 'month', (dt.date.today()-dt.timedelta(1)).month)
+    return df
+
+def clean_budget(dfs):
+    incomeCols = dfs.isIncome == True
+    expenseCols = dfs.isExpense == True
+    transferCols = dfs.isTransfer == True
+
+    dfs.loc[incomeCols,'cash_flow_type'] = 'Income'
+    dfs.loc[expenseCols,'cash_flow_type'] = 'Expense'
+    dfs.loc[transferCols,'cash_flow_type'] = 'Transfer'
+    dfs.insert(len(dfs.columns),'over_budget', False)
+    dfs.loc[dfs['rbal']<0, 'over_budget'] = True
+    dfs = dfs[['id','cash_flow_type','cat','bgt','amt','rbal','over_budget']].dropna(subset=['cash_flow_type'])
+    dfs.insert(1, 'year', (dt.date.today()-dt.timedelta(1)).year)
+    dfs.insert(2, 'month', (dt.date.today()-dt.timedelta(1)).month)   
+    dfs.insert(0, 'budget_id', dfs[['year','month','cat']].astype(str).apply('||'.join,axis=1))
+    dfs['budget_id'] = dfs['budget_id'].apply(lambda x: hashlib.sha256(x.encode('UTF-8')).hexdigest())
+    dfs.reset_index(drop = True, inplace=True)
+    return dfs
+
+
 def extract_transactions(driver, startDate, endDate):
-    base_url = 'https://mint.intuit.com/transactionDownload.event?'
+    base_url = f'{MINT_ROOT_URL}/transactionDownload.event?'
     base_url += f'startDate={startDate}'
     base_url += f'&endDate={endDate}'
     base_url += '&query=&queryNew=&offset=0&filterType=cash'
-    
+
     result = driver.request(method='get', url=base_url)
     if result.status_code != requests.codes.ok:
-        raise RuntimeError('Error requesting %r, status = %d' % (url, result.status_code))
-    
+        raise RuntimeError('Error requesting %r, status = %d' % (base_url, result.status_code))
+
     buffer = StringIO(result.content.decode('UTF-8'))
-    buffer.seek(0)    
+    buffer.seek(0)
     df = pd.read_csv(buffer, parse_dates=['Date'], infer_datetime_format=True)
     df.columns = ['_'.join(c.lower().split()) for c in df.columns]
     return df
+
 
 def last_n_days(mint, days):
     end = dt.date.today() - dt.timedelta(1)
@@ -56,29 +93,27 @@ def last_n_days(mint, days):
     trans = extract_transactions(driver=mint.driver, startDate=begin.strftime(date_format), endDate=end.strftime(date_format))
     return trans.sort_values('date')
 
-def extract_last_30_days():
+def eltBudget(mint):
+    budget_date = dt.date.today() - dt.timedelta(1)
+    budget = get_budget(mint)
+    budget = clean_budget(budget)
+    budget_file = f"budget_{budget_date}.csv"
+    budget_filename = os.path.join(RAW_DIR, budget_file)
+    budget.to_csv(budget_filename, index=False)
+    return None
+
+def extract_last_n_days(days=30):
     try:
         mint = load_mint()
-        trans = last_n_days(mint, days=30)
+        trans = last_n_days(mint, days=days)
         # Get min / max date in transactions for file name
         min_date, max_date = trans.date.min(), trans.date.max()
         file = f"transactions_{min_date.date()}_{max_date.date()}.csv"
-        filename = os.path.join(RAW_DIR,file)
+        filename = os.path.join(RAW_DIR, file)
         trans.to_csv(filename, index=False)
-    finally:
-        mint.close()
 
-    return trans
+        eltBudget(mint)
 
-def extract_last_365_days():
-    try:
-        mint = load_mint()
-        trans = last_n_days(mint, days=365)
-        # Get min / max date in transactions for file name
-        min_date, max_date = trans.date.min(), trans.date.max()
-        file = f"transactions_{min_date.date()}_{max_date.date()}.csv"
-        filename = os.path.join(RAW_DIR,file)
-        trans.to_csv(filename, index=False)
     finally:
         mint.close()
 

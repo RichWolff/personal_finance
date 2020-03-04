@@ -1,23 +1,24 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import calendar
 
 
-def get_day_suffix(num):
-    numStr = str(num)
-    if num >= 11 and num <=13:
-        res = 'th'
-    elif numStr[-1] == 1:
-        res = 'st'
-    elif numStr[-1] == 2:
-        res = 'nd'
-    elif numStr[-1] == 3:
-        res = 'rd'
+def get_day_suffix(day):
+    if 4 <= day <= 20 or 24 <= day <= 30:
+        suffix = "th"
     else:
-        res = 'th'
-    return res
+        suffix = ["st", "nd", "rd"][day % 10 - 1]
+    return suffix
 
 
-def get_chart(current_spend, budget, current_day, days_in_month, year, monthName):
+def chart_title(date):
+    return f'Wolff Family {calendar.month_name[date.month]} {date.year} Budget Through The {date.day}{get_day_suffix(date.day)}'
+
+
+def get_chart(current_spend, budget, as_of_date):
+    current_day = as_of_date.day
+    year = as_of_date.year
+    days_in_month = calendar.monthlen(year, as_of_date.month)
     daily_budget = budget/days_in_month
     daily_burn = current_spend/current_day
     as_of = daily_budget*current_day
@@ -36,7 +37,7 @@ def get_chart(current_spend, budget, current_day, days_in_month, year, monthName
     ax.vlines(as_of, ax.get_ylim()[0], ax.get_ylim()[1], ls='--', zorder=3.5)
     ax.text(current_spend-200, 1, '${:.0f}'.format(current_spend), rotation=-90, va='center', zorder=2.5)
     ax.text(budget+1, 1, '${:.0f}'.format(budget), rotation=-90, va='center', zorder=2.5)
-    ax.set_title(f'{monthName} {year} Budget Through The {current_day}{get_day_suffix(current_day)}')
+    ax.set_title(chart_title(as_of_date))
     ax.get_yaxis().set_visible(False)
     ax.xaxis.set_ticks(np.arange(0, ax.get_xlim()[1], 250))
     ax.tick_params(axis='x', which='major', labelsize=8, rotation=45)

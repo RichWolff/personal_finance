@@ -1,2 +1,2 @@
 from .send_email import send_email
-from .get_chart import get_chart
+from .get_chart import get_chart, chart_title
