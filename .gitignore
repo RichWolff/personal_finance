@@ -50,3 +50,4 @@ MANIFEST
 .venv*/
 **.csv
 **chromedriver*
+**.sqlite
