@@ -5,6 +5,7 @@ import pandas as pd
 import shutil
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 from personal_finance import settings
 
@@ -36,7 +37,8 @@ def database_cnxn(*args, **kwds):
 
 
 def get_files(file_pattern):
-    return sorted(glob.glob(os.path.join(RAW_DIR, file_pattern)))
+    files = glob.glob(os.path.join(RAW_DIR, file_pattern))
+    return sorted(files, key=lambda x: (x.split('_')[-1], x.split('_')[-2]))
 
 
 def load_file(file, table):
@@ -69,12 +71,12 @@ def read_raw_budgets():
 
 def trim_records(trim_after_date, trim_before_date):
     with database_cnxn() as cnxn:
-        qry = "SELECT name FROM sqlite_master WHERE type='table' AND name='mint_transactions'"
-        cur = cnxn.cursor()
-        records = len(cur.execute(qry).fetchall()) > 0
-        if not records:
-            cur.close()
-            return None
+        # qry = "SELECT name FROM sqlite_master WHERE type='table' AND name='mint_transactions'"
+        # cur = cnxn.cursor()
+        # records = len(cur.execute(qry).fetchall()) > 0
+        # if not records:
+        #     cur.close()
+        #     return None
         delete_query = f"DELETE FROM mint_transactions WHERE date >= '{trim_after_date}' and date <= '{trim_before_date}'"
         try:
             cursor = cnxn.cursor()
@@ -89,12 +91,12 @@ def trim_records(trim_after_date, trim_before_date):
 
 def trim_budget_records(budget_ids: pd.Series):
     with database_cnxn() as cnxn:
-        qry = "SELECT name FROM sqlite_master WHERE type='table' AND name='mint_budgets'"
-        cur = cnxn.cursor()
-        records = len(cur.execute(qry).fetchall()) > 0
-        if not records:
-            cur.close()
-            return None
+        # qry = "SELECT name FROM sqlite_master WHERE type='table' AND name='mint_budgets'"
+        # cur = cnxn.cursor()
+        # records = len(cur.execute(qry).fetchall()) > 0
+        # if not records:
+        #     cur.close()
+        #     return None
         budget_ids = "'"+"','".join(budget_ids.unique())+"'"
         delete_query = f"DELETE FROM mint_budgets WHERE budget_id in ({budget_ids})"
         try:
@@ -132,7 +134,8 @@ def ingest_file(file, trim_func, save_table):
 
 
 def move_file_to_imported(file, folder):
-    new_file_name = os.path.join(folder, file.split('\\')[-1])
+    file = Path(file)
+    new_file_name = str(folder / file.name)
     shutil.move(file, new_file_name)
     return None
 
@@ -151,6 +154,8 @@ def ingest_all_files(etl_source):
         return [{file: ingest_and_move_file(file, trim_budget_records, 'mint_budgets')} for file in get_files(BUDGET_FILE_PATTERN)]
     elif etl_source == 'transactions':
         return [{file: ingest_and_move_file(file, trim_records, 'mint_transactions')} for file in get_files(TRANSACTION_FILE_PATTERN)]
+    else:
+        raise ValueError("Passed invalid variable, choose one of ('budget', 'transactions')")
 
 
 def get_transactions_by_day():

@@ -52,9 +52,9 @@ def get_budget(mint):
 
 
 def clean_budget(dfs):
-    incomeCols = dfs.isIncome is True
-    expenseCols = dfs.isExpense is True
-    transferCols = dfs.isTransfer is True
+    incomeCols = dfs.isIncome == True  # noqa
+    expenseCols = dfs.isExpense == True  # noqa
+    transferCols = dfs.isTransfer == True  # noqa
 
     dfs.loc[incomeCols, 'cash_flow_type'] = 'Income'
     dfs.loc[expenseCols, 'cash_flow_type'] = 'Expense'
